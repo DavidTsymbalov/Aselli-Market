@@ -1,0 +1,25 @@
+# Платный сервис: примерно $7/мес + $0.25/мес за диск 1 ГБ.
+# Создание ресурсов требует подтверждения в Render.
+services:
+  - type: web
+    name: aselli-market
+    runtime: python
+    plan: starter
+    region: frankfurt
+    branch: main
+    numInstances: 1
+    autoDeployTrigger: commit
+    buildCommand: python -m unittest discover -s tests -v
+    startCommand: python app.py
+    healthCheckPath: /health
+    disk:
+      name: aselli-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_PATH
+        value: /var/data/aselli.sqlite3
+      - key: PYTHONUNBUFFERED
+        value: "1"

@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -84,6 +85,14 @@ class BetaTests(unittest.TestCase):
             with self.assertRaises(app.TelegramError) as error:
                 app.telegram("SECRET", "getMe", {})
         self.assertNotIn("SECRET", str(error.exception))
+
+    def test_render_url_and_custom_domain(self):
+        with patch.dict(os.environ, {"WEBAPP_URL": "", "RENDER_EXTERNAL_URL": "https://market.onrender.com"}, clear=True):
+            self.assertEqual(app.get_webapp_url(), "https://market.onrender.com")
+            os.environ["WEBAPP_URL"] = " https://shop.example.com "
+            self.assertEqual(app.get_webapp_url(), "https://shop.example.com")
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(app.get_webapp_url(), "")
 
 
 if __name__ == "__main__":

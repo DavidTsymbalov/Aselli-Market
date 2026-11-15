@@ -29,6 +29,12 @@ def load_env():
             os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
 
 
+def get_webapp_url():
+    # Render назначает HTTPS-адрес сам; явный URL позволяет подключить свой домен.
+    return (os.environ.get("WEBAPP_URL", "").strip()
+            or os.environ.get("RENDER_EXTERNAL_URL", "").strip())
+
+
 def connect_db(path):
     db = sqlite3.connect(path, timeout=10)
     db.execute("PRAGMA foreign_keys = ON")
@@ -164,7 +170,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     load_env()
     token = os.environ.get("BOT_TOKEN", "").strip()
-    webapp_url = os.environ.get("WEBAPP_URL", "").strip()
+    webapp_url = get_webapp_url()
     if not args.web_only:
         parsed = urlsplit(webapp_url)
         if not token or parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
