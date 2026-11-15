@@ -1,6 +1,7 @@
 """Aselli Market 0.1. Python 3.11+, без сторонних зависимостей."""
 
 import argparse
+from contextlib import contextmanager
 import json
 import logging
 import os
@@ -35,10 +36,15 @@ def get_webapp_url():
             or os.environ.get("RENDER_EXTERNAL_URL", "").strip())
 
 
+@contextmanager
 def connect_db(path):
     db = sqlite3.connect(path, timeout=10)
-    db.execute("PRAGMA foreign_keys = ON")
-    return db
+    try:
+        db.execute("PRAGMA foreign_keys = ON")
+        with db:
+            yield db
+    finally:
+        db.close()
 
 
 def init_db(path):
@@ -93,14 +99,16 @@ def handle_update(update, token, webapp_url, db_path):
         )
     if not message.get("text"):
         return
-    telegram(token, "sendMessage", {
+    payload = {
         "chat_id": message["chat"]["id"],
-        "text": "Привет! Это Aselli Market, бета 0.1.\nПока тут пусто, но кнопка уже есть 🙂",
-        "reply_markup": {"inline_keyboard": [[{
+        "text": "Привет! Это Aselli Market, бета 0.1.\nСкоро тут будут штуки 🙂",
+    }
+    if webapp_url:
+        payload["reply_markup"] = {"inline_keyboard": [[{
             "text": "Открыть магазин",
             "web_app": {"url": webapp_url},
-        }]]},
-    })
+        }]]}
+    telegram(token, "sendMessage", payload)
 
 
 def poll(token, webapp_url, db_path):
@@ -109,9 +117,10 @@ def poll(token, webapp_url, db_path):
     if info.get("url"):
         raise RuntimeError("У бота уже установлен webhook. Отключите его перед запуском polling.")
     telegram(token, "setMyCommands", {"commands": [{"command": "start", "description": "Открыть Aselli Market"}]})
-    telegram(token, "setChatMenuButton", {"menu_button": {
-        "type": "web_app", "text": "Магазин", "web_app": {"url": webapp_url},
-    }})
+    if webapp_url:
+        telegram(token, "setChatMenuButton", {"menu_button": {
+            "type": "web_app", "text": "Магазин", "web_app": {"url": webapp_url},
+        }})
     with connect_db(db_path) as db:
         row = db.execute("SELECT value FROM bot_state WHERE key='offset'").fetchone()
     offset = row[0] if row else 0
@@ -165,7 +174,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--web-only", action="store_true", help="Просмотр без подключения бота")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--web-only", action="store_true", help="Просмотр без подключения бота")
+    mode.add_argument("--bot-only", action="store_true", help="Только бот, без HTTP-сервера")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     load_env()
@@ -173,17 +184,23 @@ def main():
     webapp_url = get_webapp_url()
     if not args.web_only:
         parsed = urlsplit(webapp_url)
-        if not token or parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-            parser.error("Укажите BOT_TOKEN и публичный HTTPS WEBAPP_URL в .env; либо используйте --web-only.")
+        if not token:
+            parser.error("Укажите BOT_TOKEN в .env.")
+        if webapp_url and (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password):
+            parser.error("WEBAPP_URL должен быть публичным HTTPS-адресом. Для запуска только бота оставьте его пустым.")
     db_path = os.environ.get("DATABASE_PATH", str(ROOT / "data/aselli.sqlite3"))
     init_db(db_path)
-    server = ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8000"))), Handler)
-    server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    server = None
+    if args.web_only or (webapp_url and not args.bot_only):
+        server = ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8000"))), Handler)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        LOG.info("Мини-приложение: http://localhost:%s", server.server_port)
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: STOP.set())
-    LOG.info("Мини-приложение: http://localhost:%s", server.server_port)
+    if not args.web_only and not webapp_url:
+        LOG.info("Локальный режим: бот работает без мини-приложения. WEBAPP_URL можно добавить позже.")
     try:
         if args.web_only:
             STOP.wait()
@@ -193,8 +210,9 @@ def main():
         LOG.error("%s", error)
         raise SystemExit(1) from None
     finally:
-        server.shutdown()
-        server.server_close()
+        if server is not None:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

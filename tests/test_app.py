@@ -40,6 +40,24 @@ class BetaTests(unittest.TestCase):
             app.handle_update(self.update(chat_type="group"), "test", "https://example.com", self.path)
             api.assert_not_called()
 
+    def test_bot_replies_without_webapp_url(self):
+        with patch.object(app, "telegram") as api:
+            app.handle_update(self.update(), "test", "", self.path)
+        payload = api.call_args.args[2]
+        self.assertEqual(payload["chat_id"], 42)
+        self.assertIn("Aselli Market", payload["text"])
+        self.assertNotIn("reply_markup", payload)
+
+    def test_default_local_start_does_not_bind_http_port(self):
+        with patch.dict(os.environ, {"BOT_TOKEN": "test", "DATABASE_PATH": self.path}, clear=True), \
+                patch("sys.argv", ["app.py"]), patch.object(app, "load_env"), \
+                patch.object(app, "poll") as polling, \
+                patch.object(app, "ThreadingHTTPServer") as server, \
+                patch.object(app.signal, "signal"):
+            app.main()
+        polling.assert_called_once_with("test", "", self.path)
+        server.assert_not_called()
+
     def test_database_survives_reinitialization_and_enforces_constraints(self):
         with app.connect_db(self.path) as db:
             db.execute("INSERT INTO products (title, price_minor) VALUES ('Товар', 100)")
