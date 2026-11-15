@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="description" content="Aselli Market — бета 0.1">
+    <title>Aselli Market</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100svh;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        background: var(--tg-theme-bg-color, #101315);
+        color: var(--tg-theme-text-color, #f3f5f7);
+        font: 500 24px/1.5 system-ui, sans-serif;
+        text-align: center;
+      }
+      p { max-width: 480px; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <p>Aselli Market — скоро тут будут штуки.</p>
+    <script>
+      const app = window.Telegram?.WebApp;
+      if (app) { app.ready(); app.expand(); }
+    </script>
+  </body>
+</html>
