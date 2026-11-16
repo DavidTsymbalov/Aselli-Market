@@ -59,6 +59,17 @@ class BetaTests(unittest.TestCase):
         polling.assert_called_once_with("test", "", self.path)
         server.assert_not_called()
 
+    def test_hosted_mini_app_keeps_local_bot_independent_of_http_server(self):
+        url = "https://davidtsymbalov.github.io/Aselli-Market/"
+        with patch.dict(os.environ, {"BOT_TOKEN": "test", "WEBAPP_URL": url, "DATABASE_PATH": self.path}, clear=True), \
+                patch("sys.argv", ["app.py"]), patch.object(app, "load_env"), \
+                patch.object(app, "poll") as polling, \
+                patch.object(app, "ThreadingHTTPServer") as server, \
+                patch.object(app.signal, "signal"):
+            app.main()
+        polling.assert_called_once_with("test", url, self.path)
+        server.assert_not_called()
+
     def test_database_survives_reinitialization_and_enforces_constraints(self):
         with app.connect_db(self.path) as db:
             db.execute("INSERT INTO products (title, price_minor) VALUES ('Товар', 100)")

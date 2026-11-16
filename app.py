@@ -209,6 +209,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--web-only", action="store_true", help="Просмотр без подключения бота")
     mode.add_argument("--bot-only", action="store_true", help="Только бот, без HTTP-сервера")
+    mode.add_argument("--with-web", action="store_true", help="Бот вместе с локальным HTTP-сервером")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     load_env()
@@ -223,7 +224,7 @@ def main():
     db_path = os.environ.get("DATABASE_PATH", str(ROOT / "data/aselli.sqlite3"))
     init_db(db_path)
     server = None
-    if args.web_only or (webapp_url and not args.bot_only):
+    if args.web_only or (not args.bot_only and (args.with_web or os.environ.get("RENDER_EXTERNAL_URL"))):
         server = ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8000"))), Handler)
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
