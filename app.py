@@ -7,8 +7,11 @@ import logging
 import os
 from pathlib import Path
 import signal
+import socket
 import sqlite3
+import ssl
 import threading
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -54,10 +57,39 @@ def init_db(path):
 
 
 class TelegramError(Exception):
-    def __init__(self, code, retry_after=5):
-        super().__init__(f"Telegram API: код {code}")
+    def __init__(self, code, retry_after=5, detail=None):
+        super().__init__(f"Telegram API: {detail}" if detail else f"Telegram API: код {code}")
         self.code = code
         self.retry_after = retry_after
+
+
+@lru_cache(maxsize=1)
+def telegram_ssl_context():
+    context = ssl.create_default_context()
+    # У Python с python.org на macOS системный CA-файл может быть не настроен.
+    # certifi добавляет доверенные CA, сохраняя проверку сертификата и имени хоста.
+    try:
+        import certifi
+    except ImportError:
+        pass
+    else:
+        context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
+def network_error_detail(error):
+    reason = error.reason if isinstance(error, URLError) else error
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return "не удалось проверить TLS-сертификат. На macOS запустите Install Certificates.command из папки вашей версии Python в /Applications."
+    if isinstance(reason, ssl.SSLError):
+        return "ошибка TLS при подключении к api.telegram.org."
+    if isinstance(reason, socket.gaierror):
+        return "DNS не смог определить адрес api.telegram.org."
+    if isinstance(reason, TimeoutError):
+        return "истекло время ожидания ответа api.telegram.org."
+    if isinstance(reason, ConnectionRefusedError):
+        return "соединение с api.telegram.org или настроенным прокси отклонено."
+    return "не удалось соединиться с api.telegram.org. Проверьте интернет и настройки прокси/VPN."
 
 
 def telegram(token, method, payload):
@@ -67,7 +99,7 @@ def telegram(token, method, payload):
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urlopen(request, timeout=40) as response:
+        with urlopen(request, timeout=40, context=telegram_ssl_context()) as response:
             body = json.load(response)
     except HTTPError as error:
         try:
@@ -75,9 +107,9 @@ def telegram(token, method, payload):
         except (ValueError, OSError):
             body = {}
         raise TelegramError(error.code, body.get("parameters", {}).get("retry_after", 5)) from None
-    except (URLError, TimeoutError, OSError):
+    except (URLError, TimeoutError, OSError) as error:
         # Не выводим URL исключения: он содержит токен.
-        raise TelegramError("network") from None
+        raise TelegramError("network", detail=network_error_detail(error)) from None
     if not body.get("ok"):
         raise TelegramError(body.get("error_code", "unknown"))
     return body["result"]

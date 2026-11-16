@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import ssl
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -111,6 +112,19 @@ class BetaTests(unittest.TestCase):
             self.assertEqual(app.get_webapp_url(), "https://shop.example.com")
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(app.get_webapp_url(), "")
+
+    def test_tls_verification_remains_enabled(self):
+        context = app.telegram_ssl_context()
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_certificate_error_is_actionable_and_does_not_expose_token(self):
+        error = app.URLError(ssl.SSLCertVerificationError(1, "SECRET"))
+        with patch.object(app, "urlopen", side_effect=error):
+            with self.assertRaises(app.TelegramError) as caught:
+                app.telegram("SECRET", "getMe", {})
+        self.assertIn("Install Certificates.command", str(caught.exception))
+        self.assertNotIn("SECRET", str(caught.exception))
 
 
 if __name__ == "__main__":
